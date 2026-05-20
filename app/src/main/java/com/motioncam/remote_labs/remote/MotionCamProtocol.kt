@@ -50,6 +50,46 @@ data class CameraState(
     }
 }
 
+data class PreviewFrame(
+    val jpegBytes: ByteArray,
+    val streamId: String,
+    val sequence: Long,
+    val width: Int,
+    val height: Int,
+    val timestampMs: Long,
+)
+
+fun parsePreviewFrame(bytes: ByteArray): PreviewFrame? {
+    if (bytes.size < 8) return null
+    if (
+        bytes[0] != 'M'.code.toByte() ||
+        bytes[1] != 'C'.code.toByte() ||
+        bytes[2] != 'P'.code.toByte() ||
+        bytes[3] != 'V'.code.toByte()
+    ) {
+        return null
+    }
+    if (bytes[4].toInt() != 1 || bytes[5].toInt() != 1) {
+        return null
+    }
+
+    val headerLength = ((bytes[6].toInt() and 0xff) shl 8) or (bytes[7].toInt() and 0xff)
+    val headerStart = 8
+    val jpegStart = headerStart + headerLength
+    if (jpegStart >= bytes.size) return null
+
+    val headerJson = bytes.decodeToString(headerStart, jpegStart)
+    val header = JSONObject(headerJson)
+    return PreviewFrame(
+        jpegBytes = bytes.copyOfRange(jpegStart, bytes.size),
+        streamId = header.optString("streamId", ""),
+        sequence = header.optLong("sequence", 0L),
+        width = header.optInt("width", 0),
+        height = header.optInt("height", 0),
+        timestampMs = header.optLong("timestampMs", 0L),
+    )
+}
+
 internal fun authRequest(id: String, clientName: String, pairingCode: String): String {
     return JSONObject()
         .put("id", id)
@@ -104,4 +144,3 @@ private fun JSONObject.optNullableDouble(name: String): Double? =
 
 private fun JSONObject.optNullableBoolean(name: String): Boolean? =
     if (has(name) && !isNull(name)) optBoolean(name) else null
-

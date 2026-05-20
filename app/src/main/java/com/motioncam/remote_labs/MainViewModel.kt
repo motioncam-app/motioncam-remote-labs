@@ -1,5 +1,7 @@
 package com.motioncam.remote_labs
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.motioncam.remote_labs.remote.CameraState
@@ -25,6 +27,8 @@ data class MainUiState(
     val serverName: String = "",
     val capabilities: List<String> = emptyList(),
     val cameraState: CameraState? = null,
+    val previewFrame: Bitmap? = null,
+    val previewStatus: String = "Preview stopped",
     val isoInput: String = "400",
 )
 
@@ -51,43 +55,77 @@ class MainViewModel : ViewModel() {
                 return@launch
             }
 
-            client?.close()
-            client = MotionCamRemoteClient(pairing)
+            connect(pairing)
+        }
+    }
 
+    fun connectWithQrPayload(payload: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(qrPayload = payload, error = null) }
+            val pairing = parsePairingDetails(payload.trim())
+                .onFailure { error -> _uiState.update { it.copy(error = error.message) } }
+                .getOrNull() ?: return@launch
+
+            connect(pairing)
+        }
+    }
+
+    private suspend fun connect(pairing: PairingDetails) {
+        client?.close()
+        client = MotionCamRemoteClient(pairing) { frame ->
+            val bitmap = BitmapFactory.decodeByteArray(frame.jpegBytes, 0, frame.jpegBytes.size)
+            if (bitmap != null) {
+                _uiState.update {
+                    it.copy(
+                        previewFrame = bitmap,
+                        previewStatus = "${frame.width}x${frame.height} #${frame.sequence}",
+                    )
+                }
+            }
+        }
+
+        _uiState.update {
+            it.copy(
+                isBusy = true,
+                isConnected = false,
+                status = "Connecting",
+                error = null,
+                cameraState = null,
+                previewFrame = null,
+                previewStatus = "Preview stopped",
+            )
+        }
+
+        runCatching {
+            val auth = client!!.connectAndAuthenticate()
+            val state = client!!.getState()
+            val previewStatus = runCatching {
+                client!!.startPreview()
+                "Starting preview"
+            }.getOrElse { error ->
+                "Preview unavailable: ${error.toUserMessage()}"
+            }
             _uiState.update {
                 it.copy(
-                    isBusy = true,
-                    isConnected = false,
-                    status = "Connecting",
-                    error = null,
-                    cameraState = null,
+                    isBusy = false,
+                    isConnected = true,
+                    status = "Connected",
+                    serverName = auth.serverName,
+                    capabilities = auth.capabilities,
+                    cameraState = state,
+                    previewStatus = previewStatus,
                 )
             }
-
-            runCatching {
-                val auth = client!!.connectAndAuthenticate()
-                val state = client!!.getState()
-                _uiState.update {
-                    it.copy(
-                        isBusy = false,
-                        isConnected = true,
-                        status = "Connected",
-                        serverName = auth.serverName,
-                        capabilities = auth.capabilities,
-                        cameraState = state,
-                    )
-                }
-            }.onFailure { error ->
-                client?.close()
-                client = null
-                _uiState.update {
-                    it.copy(
-                        isBusy = false,
-                        isConnected = false,
-                        status = "Disconnected",
-                        error = error.toUserMessage(),
-                    )
-                }
+        }.onFailure { error ->
+            client?.close()
+            client = null
+            _uiState.update {
+                it.copy(
+                    isBusy = false,
+                    isConnected = false,
+                    status = "Disconnected",
+                    error = error.toUserMessage(),
+                )
             }
         }
     }
@@ -103,6 +141,8 @@ class MainViewModel : ViewModel() {
                 serverName = "",
                 capabilities = emptyList(),
                 cameraState = null,
+                previewFrame = null,
+                previewStatus = "Preview stopped",
             )
         }
     }
@@ -110,10 +150,10 @@ class MainViewModel : ViewModel() {
     fun refreshState() {
         val activeClient = client ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isBusy = true, error = null) }
+            _uiState.update { it.copy(error = null) }
             runCatching { activeClient.getState() }
-                .onSuccess { state -> _uiState.update { it.copy(isBusy = false, cameraState = state) } }
-                .onFailure { error -> _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) } }
+                .onSuccess { state -> _uiState.update { it.copy(cameraState = state) } }
+                .onFailure { error -> _uiState.update { it.copy(error = error.toUserMessage()) } }
         }
     }
 
@@ -126,14 +166,14 @@ class MainViewModel : ViewModel() {
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isBusy = true, error = null) }
+            _uiState.update { it.copy(error = null) }
             runCatching {
                 activeClient.setIso(iso)
                 activeClient.getState()
             }.onSuccess { state ->
-                _uiState.update { it.copy(isBusy = false, cameraState = state) }
+                _uiState.update { it.copy(cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
+                _uiState.update { it.copy(error = error.toUserMessage()) }
             }
         }
     }
@@ -141,14 +181,89 @@ class MainViewModel : ViewModel() {
     fun setIsoAuto() {
         val activeClient = client ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isBusy = true, error = null) }
+            _uiState.update { it.copy(error = null) }
             runCatching {
                 activeClient.setIsoAuto()
                 activeClient.getState()
             }.onSuccess { state ->
-                _uiState.update { it.copy(isBusy = false, cameraState = state) }
+                _uiState.update { it.copy(cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun setIsoValue(iso: Int) {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null, isoInput = iso.toString()) }
+            runCatching {
+                activeClient.setIso(iso)
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun setShutterNs(shutterNs: Long) {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                activeClient.setShutterNs(shutterNs)
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun setShutterAuto() {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                activeClient.setShutterAuto()
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun setWhiteBalance(temperature: Int, tint: Int = 0) {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                activeClient.setWhiteBalance(temperature, tint)
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun setWhiteBalanceAuto() {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                activeClient.setWhiteBalanceAuto()
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
             }
         }
     }
@@ -156,14 +271,14 @@ class MainViewModel : ViewModel() {
     fun resetManual() {
         val activeClient = client ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isBusy = true, error = null) }
+            _uiState.update { it.copy(error = null) }
             runCatching {
                 activeClient.resetManual()
                 activeClient.getState()
             }.onSuccess { state ->
-                _uiState.update { it.copy(isBusy = false, cameraState = state) }
+                _uiState.update { it.copy(cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
+                _uiState.update { it.copy(error = error.toUserMessage()) }
             }
         }
     }

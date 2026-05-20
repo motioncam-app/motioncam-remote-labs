@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONObject
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
@@ -21,6 +22,7 @@ import javax.net.ssl.SSLContext
 class MotionCamRemoteClient(
     private val pairingDetails: PairingDetails,
     private val clientName: String = "MotionCam Remote Labs",
+    private val onPreviewFrame: (PreviewFrame) -> Unit = {},
 ) : Closeable {
     private companion object {
         const val TAG = "MotionCamRemote"
@@ -63,6 +65,41 @@ class MotionCamRemoteClient(
 
     suspend fun setIsoAuto() {
         sendProtocolRequest("camera.setIsoAuto")
+    }
+
+    suspend fun setShutterNs(shutterNs: Long) {
+        sendProtocolRequest("camera.setShutterNs", JSONObject().put("shutterNs", shutterNs))
+    }
+
+    suspend fun setShutterAuto() {
+        sendProtocolRequest("camera.setShutterAuto")
+    }
+
+    suspend fun setWhiteBalance(temperature: Int, tint: Int = 0) {
+        sendProtocolRequest(
+            "camera.setWhiteBalance",
+            JSONObject()
+                .put("temperature", temperature)
+                .put("tint", tint)
+        )
+    }
+
+    suspend fun setWhiteBalanceAuto() {
+        sendProtocolRequest("camera.setWhiteBalanceAuto")
+    }
+
+    suspend fun startPreview() {
+        sendProtocolRequest(
+            "preview.start",
+            JSONObject()
+                .put("maxWidth", 960)
+                .put("quality", 70)
+                .put("fps", 5)
+        )
+    }
+
+    suspend fun stopPreview() {
+        sendProtocolRequest("preview.stop")
     }
 
     suspend fun resetManual() {
@@ -138,6 +175,15 @@ class MotionCamRemoteClient(
             }
 
             deferred.complete(message.optJSONObject("result") ?: JSONObject())
+        }
+
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            val frame = parsePreviewFrame(bytes.toByteArray())
+            if (frame != null) {
+                onPreviewFrame(frame)
+            } else {
+                Log.w(TAG, "Ignoring unrecognized binary WebSocket frame: ${bytes.size} bytes")
+            }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
