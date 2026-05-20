@@ -1,9 +1,13 @@
 package com.motioncam.remote_labs
 
+import android.Manifest
 import android.os.Bundle
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,13 +30,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.motioncam.remote_labs.remote.CameraState
+import com.motioncam.remote_labs.ui.QrScannerView
 import com.motioncam.remote_labs.ui.theme.MotionCamRemoteLabsTheme
 
 class MainActivity : ComponentActivity() {
@@ -79,6 +89,32 @@ private fun MotionCamRemoteApp(
     onSetIsoAuto: () -> Unit,
     onResetManual: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var showScanner by rememberSaveable { mutableStateOf(false) }
+    var scannerMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            scannerMessage = null
+            showScanner = true
+        } else {
+            scannerMessage = "Camera permission is required to scan the pairing QR code."
+        }
+    }
+
+    if (showScanner) {
+        QrScannerView(
+            onQrCodeScanned = { text ->
+                onQrPayloadChange(text)
+                scannerMessage = null
+                showScanner = false
+            },
+            onCancel = { showScanner = false },
+        )
+        return
+    }
+
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
@@ -98,10 +134,23 @@ private fun MotionCamRemoteApp(
 
             PairingCard(
                 uiState = uiState,
+                scannerMessage = scannerMessage,
                 onUrlChange = onUrlChange,
                 onPairingCodeChange = onPairingCodeChange,
                 onCertChange = onCertChange,
                 onQrPayloadChange = onQrPayloadChange,
+                onScanQr = {
+                    val hasCameraPermission = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.CAMERA,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasCameraPermission) {
+                        scannerMessage = null
+                        showScanner = true
+                    } else {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
                 onConnect = onConnect,
                 onDisconnect = onDisconnect,
             )
@@ -144,10 +193,12 @@ private fun StatusCard(uiState: MainUiState) {
 @Composable
 private fun PairingCard(
     uiState: MainUiState,
+    scannerMessage: String?,
     onUrlChange: (String) -> Unit,
     onPairingCodeChange: (String) -> Unit,
     onCertChange: (String) -> Unit,
     onQrPayloadChange: (String) -> Unit,
+    onScanQr: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -157,6 +208,17 @@ private fun PairingCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Pairing", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onScanQr,
+                    enabled = !uiState.isBusy && !uiState.isConnected,
+                ) {
+                    Text("Scan QR")
+                }
+            }
+            scannerMessage?.let {
+                Text(text = it, color = MaterialTheme.colorScheme.error)
+            }
             OutlinedTextField(
                 value = uiState.qrPayload,
                 onValueChange = onQrPayloadChange,
@@ -356,4 +418,3 @@ private fun MotionCamRemoteAppPreview() {
         )
     }
 }
-

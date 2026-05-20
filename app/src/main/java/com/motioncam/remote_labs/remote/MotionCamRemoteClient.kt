@@ -1,5 +1,6 @@
 package com.motioncam.remote_labs.remote
 
+import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -21,6 +22,10 @@ class MotionCamRemoteClient(
     private val pairingDetails: PairingDetails,
     private val clientName: String = "MotionCam Remote Labs",
 ) : Closeable {
+    private companion object {
+        const val TAG = "MotionCamRemote"
+    }
+
     private val requestIds = AtomicLong(0)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val connected = CompletableDeferred<Unit>()
@@ -36,11 +41,14 @@ class MotionCamRemoteClient(
         val request = Request.Builder()
             .url(pairingDetails.url)
             .build()
+        Log.i(TAG, "Opening WebSocket to ${pairingDetails.url}")
         webSocket = okHttpClient.newWebSocket(request, Listener())
 
         withTimeout(10_000) { connected.await() }
         val id = nextId("auth")
+        Log.i(TAG, "Sending auth.hello")
         val result = sendRequest(id, authRequest(id, clientName, pairingDetails.pairingCode))
+        Log.i(TAG, "Authentication accepted")
         parseAuthResult(result)
     }
 
@@ -72,6 +80,7 @@ class MotionCamRemoteClient(
 
     private suspend fun sendProtocolRequest(method: String, params: JSONObject? = null): JSONObject {
         val id = nextId(method.substringAfterLast('.'))
+        Log.d(TAG, "Sending $method with id $id")
         return sendRequest(id, request(id, method, params))
     }
 
@@ -97,19 +106,26 @@ class MotionCamRemoteClient(
 
     private inner class Listener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            Log.i(TAG, "WebSocket opened with HTTP ${response.code}")
             connected.complete(Unit)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
+            Log.d(TAG, "WebSocket text: $text")
             val message = runCatching { JSONObject(text) }.getOrNull() ?: return
             val id = message.optString("id", "")
             if (id.isBlank()) {
+                val event = message.optString("event", "")
+                if (event.isNotBlank()) {
+                    Log.d(TAG, "WebSocket event: $event")
+                }
                 return
             }
 
             val deferred = pending.remove(id) ?: return
             val error = message.optJSONObject("error")
             if (error != null) {
+                Log.w(TAG, "Request $id failed: $error")
                 deferred.completeExceptionally(
                     MotionCamRemoteException(
                         MotionCamError(
@@ -125,14 +141,20 @@ class MotionCamRemoteClient(
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            Log.e(TAG, "WebSocket failure. HTTP ${response?.code}", t)
             connected.completeExceptionally(t)
             closed.complete(Unit)
             failPending(t)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            Log.w(TAG, "WebSocket closed: code=$code reason=$reason")
             closed.complete(Unit)
             failPending(IllegalStateException("Socket closed: $code $reason"))
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            Log.w(TAG, "WebSocket closing: code=$code reason=$reason")
         }
     }
 
@@ -167,4 +189,3 @@ private fun buildOkHttpClient(pairingDetails: PairingDetails): OkHttpClient {
 
     return builder.build()
 }
-

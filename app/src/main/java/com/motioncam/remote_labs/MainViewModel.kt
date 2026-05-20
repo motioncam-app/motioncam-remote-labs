@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.net.ssl.SSLHandshakeException
 
 data class MainUiState(
     val url: String = "",
@@ -84,7 +85,7 @@ class MainViewModel : ViewModel() {
                         isBusy = false,
                         isConnected = false,
                         status = "Disconnected",
-                        error = error.message ?: error::class.java.simpleName,
+                        error = error.toUserMessage(),
                     )
                 }
             }
@@ -112,7 +113,7 @@ class MainViewModel : ViewModel() {
             _uiState.update { it.copy(isBusy = true, error = null) }
             runCatching { activeClient.getState() }
                 .onSuccess { state -> _uiState.update { it.copy(isBusy = false, cameraState = state) } }
-                .onFailure { error -> _uiState.update { it.copy(isBusy = false, error = error.message) } }
+                .onFailure { error -> _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) } }
         }
     }
 
@@ -132,7 +133,7 @@ class MainViewModel : ViewModel() {
             }.onSuccess { state ->
                 _uiState.update { it.copy(isBusy = false, cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.message) }
+                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
             }
         }
     }
@@ -147,7 +148,7 @@ class MainViewModel : ViewModel() {
             }.onSuccess { state ->
                 _uiState.update { it.copy(isBusy = false, cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.message) }
+                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
             }
         }
     }
@@ -162,7 +163,7 @@ class MainViewModel : ViewModel() {
             }.onSuccess { state ->
                 _uiState.update { it.copy(isBusy = false, cameraState = state) }
             }.onFailure { error ->
-                _uiState.update { it.copy(isBusy = false, error = error.message) }
+                _uiState.update { it.copy(isBusy = false, error = error.toUserMessage()) }
             }
         }
     }
@@ -194,3 +195,9 @@ class MainViewModel : ViewModel() {
     }
 }
 
+private fun Throwable.toUserMessage(): String {
+    if (this is SSLHandshakeException && message?.contains("connection closed", ignoreCase = true) == true) {
+        return "TLS handshake failed before pairing. MotionCam may be unable to serve WSS on this device; enable insecure lab transport in MotionCam Remote settings and scan the ws:// QR code."
+    }
+    return message ?: javaClass.simpleName
+}
