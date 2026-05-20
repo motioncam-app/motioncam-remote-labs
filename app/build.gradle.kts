@@ -30,12 +30,25 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
         compose = true
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set(
+                output.versionName.map { versionName ->
+                    "motioncam-remote-labs-${variant.name}-v$versionName.apk"
+                }
+            )
+        }
     }
 }
 
