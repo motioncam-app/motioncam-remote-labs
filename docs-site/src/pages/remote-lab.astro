@@ -1,0 +1,1079 @@
+---
+const defaultUrl = 'ws://127.0.0.1:8765';
+const defaultClientName = 'motioncam-remote-lab';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MotionCam Remote Lab</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111315;
+        --panel: #1a1d21;
+        --panel-strong: #23272d;
+        --border: #343a42;
+        --text: #eef1f4;
+        --muted: #a4adb8;
+        --accent: #44b987;
+        --accent-strong: #5dd49f;
+        --danger: #ff6b6b;
+        --warning: #f0b84d;
+        --shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--panel-strong);
+        color: var(--text);
+        padding: 0 12px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #07120d;
+        font-weight: 700;
+      }
+
+      button.danger {
+        border-color: rgba(255, 107, 107, 0.55);
+        color: #ffd8d8;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #0f1113;
+        color: var(--text);
+        padding: 10px 11px;
+      }
+
+      textarea {
+        min-height: 152px;
+        resize: vertical;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+        background: #15181b;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 180px;
+      }
+
+      .mark {
+        width: 32px;
+        height: 32px;
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        position: relative;
+      }
+
+      .mark::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .connection {
+        display: grid;
+        grid-template-columns: minmax(220px, 1.4fr) minmax(150px, 0.9fr) minmax(120px, 0.7fr) auto auto;
+        gap: 8px;
+        align-items: end;
+        width: min(980px, 100%);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--danger);
+      }
+
+      .dot.connected {
+        background: var(--accent-strong);
+      }
+
+      .dot.pending {
+        background: var(--warning);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.2fr);
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .column {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: #171a1e;
+      }
+
+      .panel-body {
+        padding: 14px;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        min-height: 74px;
+        display: grid;
+        align-content: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #121417;
+        padding: 10px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        overflow-wrap: anywhere;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      .controls {
+        display: grid;
+        gap: 12px;
+      }
+
+      .control-row {
+        display: grid;
+        grid-template-columns: minmax(140px, 1fr) auto auto;
+        gap: 8px;
+        align-items: end;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .script-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .result {
+        min-height: 44px;
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #0f1113;
+        padding: 10px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      .preview-controls {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        align-items: end;
+        margin-bottom: 10px;
+      }
+
+      .preview-view {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #070809;
+      }
+
+      .preview-view img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .preview-empty {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .preview-meta {
+        margin-top: 8px;
+        color: var(--muted);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+      }
+
+      .log {
+        height: 360px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #0f1113;
+        padding: 10px;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .log-line {
+        display: grid;
+        grid-template-columns: 74px 72px 1fr;
+        gap: 8px;
+        padding: 3px 0;
+        border-bottom: 1px solid rgba(52, 58, 66, 0.36);
+      }
+
+      .log-line:last-child {
+        border-bottom: 0;
+      }
+
+      .level-error {
+        color: var(--danger);
+      }
+
+      .level-warn {
+        color: var(--warning);
+      }
+
+      .level-log {
+        color: var(--accent-strong);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 920px) {
+        .topbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .connection {
+          grid-template-columns: 1fr;
+        }
+
+        main {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .state-grid,
+        .control-row {
+          grid-template-columns: 1fr;
+        }
+
+        .script-actions {
+          flex-direction: column;
+        }
+
+        .preview-controls {
+          grid-template-columns: 1fr;
+        }
+
+        .log-line {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true"></div>
+          <div>
+            <h1>Remote Lab</h1>
+            <div class="status"><span id="status-dot" class="dot"></span><span id="status-text">Disconnected</span></div>
+          </div>
+        </div>
+        <div class="connection">
+          <label>
+            WebSocket
+            <input id="url-input" value={defaultUrl} spellcheck="false" />
+          </label>
+          <label>
+            Client
+            <input id="client-name-input" value={defaultClientName} spellcheck="false" />
+          </label>
+          <label>
+            Pairing Code
+            <input id="pairing-code-input" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
+          </label>
+          <button id="connect-button" class="primary">Connect & Pair</button>
+          <button id="disconnect-button" class="danger" disabled>Disconnect</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="column" aria-label="Camera state and controls">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Camera State</h2>
+              <button id="refresh-button" disabled>Refresh</button>
+            </div>
+            <div class="panel-body">
+              <div class="state-grid">
+                <div class="metric"><span>Camera</span><strong id="camera-id">-</strong></div>
+                <div class="metric"><span>Mode</span><strong id="capture-mode">-</strong></div>
+                <div class="metric"><span>Controller</span><strong id="controller-state">-</strong></div>
+                <div class="metric"><span>Preview</span><strong id="preview-running">-</strong></div>
+                <div class="metric"><span>ISO</span><strong id="iso-value">-</strong></div>
+                <div class="metric"><span>Shutter</span><strong id="shutter-value">-</strong></div>
+                <div class="metric"><span>Focus</span><strong id="focus-value">-</strong></div>
+                <div class="metric"><span>White Balance</span><strong id="wb-value">-</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Camera Controls</h2>
+              <button id="reset-manual-button" disabled>Reset Manual</button>
+            </div>
+            <div class="panel-body controls">
+              <div class="control-row">
+                <label>
+                  ISO
+                  <input id="iso-input" type="number" min="1" step="1" value="800" />
+                </label>
+                <button id="set-iso-button" disabled>Set</button>
+                <button id="auto-iso-button" disabled>Auto</button>
+              </div>
+              <div class="control-row">
+                <label>
+                  Shutter ns
+                  <input id="shutter-input" type="number" min="1" step="1" value="10000000" />
+                </label>
+                <button id="set-shutter-button" disabled>Set</button>
+                <button id="auto-shutter-button" disabled>Auto</button>
+              </div>
+              <div class="control-row">
+                <label>
+                  Focus diopters
+                  <input id="focus-input" type="number" step="0.05" value="2.0" />
+                </label>
+                <button id="set-focus-button" disabled>Set</button>
+                <button id="auto-focus-button" disabled>Auto</button>
+              </div>
+              <div class="control-row">
+                <label>
+                  White balance
+                  <input id="wb-input" value="5600, 0" spellcheck="false" />
+                </label>
+                <button id="set-wb-button" disabled>Set</button>
+                <button id="auto-wb-button" disabled>Auto</button>
+              </div>
+              <div class="button-row">
+                <button id="lock-exposure-button" disabled>Lock Exposure</button>
+                <button id="unlock-exposure-button" disabled>Unlock Exposure</button>
+                <button id="lock-focus-button" disabled>Lock Focus</button>
+                <button id="unlock-focus-button" disabled>Unlock Focus</button>
+                <button id="toggle-awb-button" disabled>Toggle AWB Lock</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="column" aria-label="Scripts and events">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Preview Stream</h2>
+              <div class="button-row">
+                <button id="start-preview-button" disabled>Start</button>
+                <button id="stop-preview-button" class="danger" disabled>Stop</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="preview-controls">
+                <label>
+                  Max Width
+                  <input id="preview-width-input" type="number" min="160" max="1280" step="1" value="640" />
+                </label>
+                <label>
+                  Quality
+                  <input id="preview-quality-input" type="number" min="1" max="90" step="1" value="65" />
+                </label>
+                <label>
+                  FPS
+                  <input id="preview-fps-input" type="number" min="1" max="10" step="1" value="2" />
+                </label>
+              </div>
+              <div class="preview-view">
+                <img id="preview-image" alt="Remote camera preview" hidden />
+                <span id="preview-empty" class="preview-empty">Preview stopped</span>
+              </div>
+              <div id="preview-meta" class="preview-meta">No frames</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Script Runner</h2>
+              <div class="button-row">
+                <button id="script-state-button" disabled>State JSON</button>
+                <button id="script-cameras-button" disabled>Cameras JSON</button>
+                <button id="script-lenses-button" disabled>Lenses JSON</button>
+                <button id="script-profiles-button" disabled>Profiles JSON</button>
+                <button id="script-log-button" disabled>Console Log</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <textarea id="script-input" spellcheck="false">JSON.stringify(motioncam.state, null, 2)</textarea>
+              <div class="script-actions">
+                <button id="run-script-button" class="primary" disabled>Run Script</button>
+                <button id="clear-console-button" disabled>Clear Console</button>
+              </div>
+              <pre id="script-result" class="result">No result</pre>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Events</h2>
+              <button id="clear-log-button">Clear Log</button>
+            </div>
+            <div class="panel-body">
+              <div id="log" class="log" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const state = {
+        socket: null,
+        nextId: 1,
+        pending: new Map(),
+        connected: false,
+        authenticated: false,
+        capabilities: new Set(),
+        preview: {
+          running: false,
+          streamId: null,
+          objectUrl: null,
+          frames: 0,
+        },
+      };
+
+      const elements = {
+        url: document.querySelector('#url-input'),
+        clientName: document.querySelector('#client-name-input'),
+        pairingCode: document.querySelector('#pairing-code-input'),
+        connect: document.querySelector('#connect-button'),
+        disconnect: document.querySelector('#disconnect-button'),
+        statusDot: document.querySelector('#status-dot'),
+        statusText: document.querySelector('#status-text'),
+        refresh: document.querySelector('#refresh-button'),
+        cameraId: document.querySelector('#camera-id'),
+        captureMode: document.querySelector('#capture-mode'),
+        controllerState: document.querySelector('#controller-state'),
+        previewRunning: document.querySelector('#preview-running'),
+        isoValue: document.querySelector('#iso-value'),
+        shutterValue: document.querySelector('#shutter-value'),
+        focusValue: document.querySelector('#focus-value'),
+        wbValue: document.querySelector('#wb-value'),
+        isoInput: document.querySelector('#iso-input'),
+        shutterInput: document.querySelector('#shutter-input'),
+        focusInput: document.querySelector('#focus-input'),
+        wbInput: document.querySelector('#wb-input'),
+        previewWidth: document.querySelector('#preview-width-input'),
+        previewQuality: document.querySelector('#preview-quality-input'),
+        previewFps: document.querySelector('#preview-fps-input'),
+        startPreview: document.querySelector('#start-preview-button'),
+        stopPreview: document.querySelector('#stop-preview-button'),
+        previewImage: document.querySelector('#preview-image'),
+        previewEmpty: document.querySelector('#preview-empty'),
+        previewMeta: document.querySelector('#preview-meta'),
+        scriptInput: document.querySelector('#script-input'),
+        scriptResult: document.querySelector('#script-result'),
+        log: document.querySelector('#log'),
+      };
+
+      const commandButtons = [
+        '#refresh-button',
+        '#reset-manual-button',
+        '#set-iso-button',
+        '#auto-iso-button',
+        '#set-shutter-button',
+        '#auto-shutter-button',
+        '#set-focus-button',
+        '#auto-focus-button',
+        '#set-wb-button',
+        '#auto-wb-button',
+        '#lock-exposure-button',
+        '#unlock-exposure-button',
+        '#lock-focus-button',
+        '#unlock-focus-button',
+        '#toggle-awb-button',
+        '#script-state-button',
+        '#script-cameras-button',
+        '#script-lenses-button',
+        '#script-profiles-button',
+        '#script-log-button',
+        '#run-script-button',
+        '#clear-console-button',
+        '#start-preview-button',
+        '#stop-preview-button',
+      ].map((selector) => document.querySelector(selector));
+
+      function setConnectionState(connected, authenticated, label) {
+        state.connected = connected;
+        state.authenticated = authenticated;
+        elements.statusDot.classList.toggle('connected', authenticated);
+        elements.statusDot.classList.toggle('pending', connected && !authenticated);
+        elements.statusText.textContent = label;
+        elements.connect.disabled = connected;
+        elements.disconnect.disabled = !connected;
+        elements.url.disabled = connected;
+        elements.clientName.disabled = connected;
+        elements.pairingCode.disabled = connected;
+        for (const button of commandButtons) {
+          button.disabled = !authenticated;
+        }
+        updatePreviewButtons();
+      }
+
+      function updatePreviewButtons() {
+        elements.startPreview.disabled = !state.authenticated || state.preview.running;
+        elements.stopPreview.disabled = !state.authenticated || !state.preview.running;
+        elements.previewWidth.disabled = state.preview.running;
+        elements.previewQuality.disabled = state.preview.running;
+        elements.previewFps.disabled = state.preview.running;
+      }
+
+      function addLog(level, source, message) {
+        const line = document.createElement('div');
+        line.className = 'log-line';
+
+        const time = document.createElement('span');
+        time.className = 'muted';
+        time.textContent = new Date().toLocaleTimeString();
+
+        const levelNode = document.createElement('span');
+        levelNode.className = `level-${String(level || 'log').toLowerCase()}`;
+        levelNode.textContent = String(level || 'log').toUpperCase();
+
+        const messageNode = document.createElement('span');
+        messageNode.textContent = source ? `[${source}] ${message}` : message;
+
+        line.append(time, levelNode, messageNode);
+        elements.log.append(line);
+        elements.log.scrollTop = elements.log.scrollHeight;
+      }
+
+      function rejectPending(error) {
+        for (const request of state.pending.values()) {
+          request.reject(error);
+        }
+        state.pending.clear();
+      }
+
+      function connect() {
+        const url = elements.url.value.trim();
+        const clientName = elements.clientName.value.trim();
+        const pairingCode = elements.pairingCode.value.trim();
+        if (!url) {
+          addLog('error', 'lab', 'WebSocket URL is required');
+          return;
+        }
+        if (!clientName) {
+          addLog('error', 'lab', 'Client name is required');
+          return;
+        }
+        if (!pairingCode) {
+          addLog('error', 'lab', 'Pairing code is required');
+          return;
+        }
+
+        setConnectionState(true, false, 'Connecting');
+        const socket = new WebSocket(url);
+        state.socket = socket;
+        socket.binaryType = 'arraybuffer';
+
+        socket.addEventListener('open', () => {
+          addLog('log', 'lab', `Connected to ${url}`);
+          authenticate(clientName, pairingCode).catch((error) => {
+            reportError(error);
+            disconnect();
+          });
+        });
+
+        socket.addEventListener('message', (event) => {
+          if (event.data instanceof ArrayBuffer) {
+            handlePreviewFrame(event.data);
+            return;
+          }
+
+          let message;
+          try {
+            message = JSON.parse(event.data);
+          } catch (error) {
+            addLog('error', 'socket', `Invalid JSON: ${error.message}`);
+            return;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(message, 'id')) {
+            const id = String(message.id);
+            const request = state.pending.get(id);
+            if (!request) {
+              addLog('warn', 'protocol', `No pending request for id ${id}`);
+              return;
+            }
+
+            state.pending.delete(id);
+            if (message.error) {
+              request.reject(message.error);
+            } else {
+              request.resolve(message.result || {});
+            }
+            return;
+          }
+
+          handleEvent(message);
+        });
+
+        socket.addEventListener('close', () => {
+          rejectPending(new Error('WebSocket closed'));
+          stopLocalPreview();
+          state.socket = null;
+          state.capabilities = new Set();
+          setConnectionState(false, false, 'Disconnected');
+          addLog('warn', 'socket', 'Connection closed');
+        });
+
+        socket.addEventListener('error', () => {
+          addLog('error', 'socket', 'WebSocket error');
+        });
+      }
+
+      async function authenticate(clientName, pairingCode) {
+        setConnectionState(true, false, 'Authenticating');
+        const result = await send('auth.hello', {
+          clientName,
+          protocolVersion: 1,
+          pairingCode,
+        });
+
+        state.capabilities = new Set(Array.isArray(result.capabilities) ? result.capabilities : []);
+        setConnectionState(true, true, `Authenticated: ${result.serverName || 'MotionCam'}`);
+        elements.pairingCode.value = '';
+        addLog('log', 'auth', `${result.authMode || 'authenticated'} as ${result.clientName || clientName}`);
+        if (state.capabilities.size > 0) {
+          addLog('log', 'auth', `Capabilities: ${Array.from(state.capabilities).join(', ')}`);
+        }
+        await refreshState();
+      }
+
+      function disconnect() {
+        if (state.preview.running) {
+          send('preview.stop').catch(() => {});
+        }
+        if (state.socket) {
+          state.socket.close();
+        }
+      }
+
+      function send(method, params = {}) {
+        if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
+          return Promise.reject(new Error('WebSocket is not connected'));
+        }
+
+        const id = String(state.nextId++);
+        state.socket.send(JSON.stringify({ id, method, params }));
+
+        return new Promise((resolve, reject) => {
+          state.pending.set(id, { resolve, reject });
+        });
+      }
+
+      function handleEvent(message) {
+        const params = message.params || message.payload || {};
+        if (message.event === 'console.entry') {
+          addLog(params.level || 'log', params.source || 'script', params.message || '');
+          return;
+        }
+        if (message.event === 'console.cleared') {
+          elements.log.textContent = '';
+          addLog('log', 'console', 'Cleared');
+          return;
+        }
+        if (message.event === 'session.opened') {
+          addLog('log', 'session', `Opened ${params.id || ''}`.trim());
+          return;
+        }
+        if (message.event === 'preview.started') {
+          addLog('log', 'preview', `Started ${params.streamId || ''}`.trim());
+          return;
+        }
+        if (message.event === 'preview.stopped') {
+          stopLocalPreview();
+          addLog('log', 'preview', 'Stopped');
+          return;
+        }
+        if (message.event === 'preview.error') {
+          addLog('warn', 'preview', params.message || 'Preview stream error');
+          return;
+        }
+
+        addLog('log', 'event', `${message.event || 'unknown'} ${JSON.stringify(params)}`);
+      }
+
+      async function startPreview() {
+        const result = await send('preview.start', {
+          maxWidth: readBoundedInteger(elements.previewWidth, 'Preview max width', 160, 1280),
+          quality: readBoundedInteger(elements.previewQuality, 'Preview quality', 1, 90),
+          fps: readBoundedInteger(elements.previewFps, 'Preview FPS', 1, 10),
+        });
+
+        state.preview.running = true;
+        state.preview.streamId = result.streamId || null;
+        state.preview.frames = 0;
+        elements.previewMeta.textContent = `Waiting for ${state.preview.streamId || 'preview'} frames`;
+        updatePreviewButtons();
+      }
+
+      async function stopPreview() {
+        await send('preview.stop');
+        stopLocalPreview();
+      }
+
+      function stopLocalPreview() {
+        state.preview.running = false;
+        state.preview.streamId = null;
+        state.preview.frames = 0;
+        if (state.preview.objectUrl) {
+          URL.revokeObjectURL(state.preview.objectUrl);
+          state.preview.objectUrl = null;
+        }
+        elements.previewImage.hidden = true;
+        elements.previewImage.removeAttribute('src');
+        elements.previewEmpty.hidden = false;
+        elements.previewMeta.textContent = 'No frames';
+        updatePreviewButtons();
+      }
+
+      function handlePreviewFrame(buffer) {
+        let frame;
+        try {
+          frame = decodePreviewFrame(buffer);
+        } catch (error) {
+          addLog('error', 'preview', error.message);
+          return;
+        }
+
+        if (state.preview.streamId && frame.header.streamId !== state.preview.streamId) {
+          return;
+        }
+
+        const blob = new Blob([frame.jpeg], { type: frame.header.mimeType || 'image/jpeg' });
+        const nextUrl = URL.createObjectURL(blob);
+        const previousUrl = state.preview.objectUrl;
+        elements.previewImage.onload = () => {
+          if (previousUrl) {
+            URL.revokeObjectURL(previousUrl);
+          }
+        };
+        elements.previewImage.src = nextUrl;
+        elements.previewImage.hidden = false;
+        elements.previewEmpty.hidden = true;
+        state.preview.objectUrl = nextUrl;
+        state.preview.frames += 1;
+        elements.previewMeta.textContent = `${frame.header.width}x${frame.header.height} frame ${frame.header.sequence}`;
+      }
+
+      function decodePreviewFrame(buffer) {
+        const bytes = new Uint8Array(buffer);
+        if (bytes.length < 8) {
+          throw new Error('Preview frame is too small');
+        }
+        if (bytes[0] !== 0x4d || bytes[1] !== 0x43 || bytes[2] !== 0x50 || bytes[3] !== 0x56) {
+          throw new Error('Invalid preview frame magic');
+        }
+        if (bytes[4] !== 1 || bytes[5] !== 1) {
+          throw new Error('Unsupported preview frame version or type');
+        }
+
+        const headerLength = (bytes[6] << 8) | bytes[7];
+        const jpegOffset = 8 + headerLength;
+        if (jpegOffset > bytes.length) {
+          throw new Error('Invalid preview frame header length');
+        }
+
+        const headerJson = new TextDecoder().decode(bytes.slice(8, jpegOffset));
+        const header = JSON.parse(headerJson);
+        return {
+          header,
+          jpeg: buffer.slice(jpegOffset),
+        };
+      }
+
+      async function refreshState() {
+        const result = await send('state.get');
+        renderState(result);
+        return result;
+      }
+
+      function renderState(snapshot) {
+        const camera = snapshot.camera || {};
+        const controls = camera.controls || {};
+        const exposure = controls.exposure || {};
+        const focus = controls.focus || {};
+        const wb = controls.whiteBalance || {};
+        elements.cameraId.textContent = camera.id == null ? '-' : String(camera.id);
+        elements.captureMode.textContent = snapshot.app?.captureMode || '-';
+        elements.controllerState.textContent = camera.controllerState || '-';
+        elements.previewRunning.textContent = `${formatBool(camera.previewRunning)} / ${formatBool(camera.running)}`;
+        elements.isoValue.textContent = formatNumber(exposure.iso);
+        elements.shutterValue.textContent = `${formatNumber(exposure.shutterNs)} ns`;
+        elements.focusValue.textContent = `${formatNumber(focus.distanceDiopters)} D`;
+        elements.wbValue.textContent = `${formatNumber(wb.temperature)} K / ${formatNumber(wb.tint)}`;
+      }
+
+      function formatBool(value) {
+        return value === true ? 'on' : value === false ? 'off' : '-';
+      }
+
+      function formatNumber(value) {
+        return Number.isFinite(Number(value)) ? String(value) : '-';
+      }
+
+      async function runScript(source) {
+        const result = await send('script.run', { source });
+        elements.scriptResult.textContent = result.value || '';
+        return result.value || '';
+      }
+
+      async function runCommand(method, params = {}) {
+        await send(method, params);
+        await refreshState();
+      }
+
+      function readFiniteNumber(input, label) {
+        const value = Number(input.value);
+        if (!Number.isFinite(value)) {
+          throw new Error(`${label} must be a number`);
+        }
+        return value;
+      }
+
+      function readInteger(input, label) {
+        const value = readFiniteNumber(input, label);
+        if (!Number.isInteger(value)) {
+          throw new Error(`${label} must be an integer`);
+        }
+        return value;
+      }
+
+      function readBoundedInteger(input, label, min, max) {
+        const value = readInteger(input, label);
+        if (value < min || value > max) {
+          throw new Error(`${label} must be between ${min} and ${max}`);
+        }
+        return value;
+      }
+
+      function readWhiteBalance() {
+        const parts = elements.wbInput.value.split(',').map((part) => Number(part.trim()));
+        if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) {
+          throw new Error('White balance must be "temperature, tint"');
+        }
+        return parts;
+      }
+
+      function reportError(error) {
+        const message = error && error.message ? error.message : JSON.stringify(error);
+        elements.scriptResult.textContent = message;
+        addLog('error', 'lab', message);
+      }
+
+      function bind(selector, handler) {
+        document.querySelector(selector).addEventListener('click', () => {
+          Promise.resolve()
+            .then(handler)
+            .catch(reportError);
+        });
+      }
+
+      bind('#connect-button', connect);
+      bind('#disconnect-button', disconnect);
+      bind('#refresh-button', refreshState);
+      bind('#set-iso-button', () => runCommand('camera.setIso', { iso: readInteger(elements.isoInput, 'ISO') }));
+      bind('#auto-iso-button', () => runCommand('camera.setIsoAuto'));
+      bind('#set-shutter-button', () =>
+        runCommand('camera.setShutterNs', { shutterNs: readInteger(elements.shutterInput, 'Shutter') })
+      );
+      bind('#auto-shutter-button', () => runCommand('camera.setShutterAuto'));
+      bind('#set-focus-button', () =>
+        runCommand('camera.setFocusDistance', { diopters: readFiniteNumber(elements.focusInput, 'Focus') })
+      );
+      bind('#auto-focus-button', () => runCommand('camera.setFocusAuto'));
+      bind('#set-wb-button', () => {
+        const [temperature, tint] = readWhiteBalance();
+        return runCommand('camera.setWhiteBalance', {
+          temperature: Math.trunc(temperature),
+          tint: Math.trunc(tint),
+        });
+      });
+      bind('#auto-wb-button', () => runCommand('camera.setWhiteBalanceAuto'));
+      bind('#lock-exposure-button', () => runCommand('camera.setExposureLock', { enabled: true }));
+      bind('#unlock-exposure-button', () => runCommand('camera.setExposureLock', { enabled: false }));
+      bind('#lock-focus-button', () => runCommand('camera.setFocusLock', { enabled: true }));
+      bind('#unlock-focus-button', () => runCommand('camera.setFocusLock', { enabled: false }));
+      bind('#toggle-awb-button', () => runCommand('camera.toggleAutoWhiteBalanceLock'));
+      bind('#reset-manual-button', () => runCommand('camera.resetManual'));
+      bind('#script-state-button', () => {
+        elements.scriptInput.value = 'JSON.stringify(motioncam.state, null, 2)';
+      });
+      bind('#script-cameras-button', () => {
+        elements.scriptInput.value = 'JSON.stringify(motioncam.cameras, null, 2)';
+      });
+      bind('#script-lenses-button', () => {
+        elements.scriptInput.value = 'JSON.stringify(motioncam.lenses, null, 2)';
+      });
+      bind('#script-profiles-button', () => {
+        elements.scriptInput.value = 'JSON.stringify(motioncam.profiles, null, 2)';
+      });
+      bind('#script-log-button', () => {
+        elements.scriptInput.value = "console.log('remote lab', JSON.stringify(motioncam.state));";
+      });
+      bind('#run-script-button', () => runScript(elements.scriptInput.value));
+      bind('#clear-console-button', () => send('console.clear'));
+      bind('#start-preview-button', startPreview);
+      bind('#stop-preview-button', stopPreview);
+      bind('#clear-log-button', () => {
+        elements.log.textContent = '';
+      });
+
+      setConnectionState(false, false, 'Disconnected');
+      addLog('log', 'lab', 'Ready');
+    </script>
+  </body>
+</html>
