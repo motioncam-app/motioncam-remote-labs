@@ -49,7 +49,7 @@ class MotionCamRemoteClient(
         withTimeout(10_000) { connected.await() }
         val id = nextId("auth")
         Log.i(TAG, "Sending auth.hello")
-        val result = sendRequest(id, authRequest(id, clientName, pairingDetails.pairingCode))
+        val result = sendRequest(id, authRequest(id, clientName, pairingDetails))
         Log.i(TAG, "Authentication accepted")
         parseAuthResult(result)
     }
@@ -57,6 +57,37 @@ class MotionCamRemoteClient(
     suspend fun getState(): CameraState {
         val result = sendProtocolRequest("state.get")
         return CameraState.fromJson(result)
+    }
+
+    suspend fun listCameras(): List<CameraInfo> {
+        val result = sendProtocolRequest("camera.list")
+        return parseCameraList(result)
+    }
+
+    suspend fun listLenses(): List<LensInfo> {
+        val result = sendProtocolRequest("lens.list")
+        return parseLensList(result)
+    }
+
+    suspend fun listProfiles(): List<ProfileInfo> {
+        val result = sendProtocolRequest("profile.list")
+        return parseProfileList(result)
+    }
+
+    suspend fun selectProfile(profileId: String) {
+        sendProtocolRequest("profile.select", JSONObject().put("profileId", profileId))
+    }
+
+    suspend fun setCaptureMode(mode: String) {
+        sendProtocolRequest("capture.setMode", JSONObject().put("mode", mode))
+    }
+
+    suspend fun startCapture() {
+        sendProtocolRequest("capture.start")
+    }
+
+    suspend fun stopCapture() {
+        sendProtocolRequest("capture.stop")
     }
 
     suspend fun setIso(iso: Int) {

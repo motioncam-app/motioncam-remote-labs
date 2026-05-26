@@ -5,9 +5,12 @@ import android.graphics.BitmapFactory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.motioncam.remote_labs.remote.CameraState
+import com.motioncam.remote_labs.remote.LensInfo
 import com.motioncam.remote_labs.remote.MotionCamRemoteClient
 import com.motioncam.remote_labs.remote.PairingDetails
+import com.motioncam.remote_labs.remote.ProfileInfo
 import com.motioncam.remote_labs.remote.parsePairingDetails
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +30,8 @@ data class MainUiState(
     val serverName: String = "",
     val capabilities: List<String> = emptyList(),
     val cameraState: CameraState? = null,
+    val lenses: List<LensInfo> = emptyList(),
+    val profiles: List<ProfileInfo> = emptyList(),
     val previewFrame: Bitmap? = null,
     val previewStatus: String = "Preview stopped",
     val isoInput: String = "400",
@@ -99,6 +104,12 @@ class MainViewModel : ViewModel() {
         runCatching {
             val auth = client!!.connectAndAuthenticate()
             val state = client!!.getState()
+            val lenses = runCatching {
+                if ("lens.list" in auth.capabilities) client!!.listLenses() else emptyList()
+            }.getOrDefault(emptyList())
+            val profiles = runCatching {
+                if ("profile.list" in auth.capabilities) client!!.listProfiles() else emptyList()
+            }.getOrDefault(emptyList())
             val previewStatus = runCatching {
                 client!!.startPreview()
                 "Starting preview"
@@ -113,6 +124,8 @@ class MainViewModel : ViewModel() {
                     serverName = auth.serverName,
                     capabilities = auth.capabilities,
                     cameraState = state,
+                    lenses = lenses,
+                    profiles = profiles,
                     previewStatus = previewStatus,
                 )
             }
@@ -141,6 +154,8 @@ class MainViewModel : ViewModel() {
                 serverName = "",
                 capabilities = emptyList(),
                 cameraState = null,
+                lenses = emptyList(),
+                profiles = emptyList(),
                 previewFrame = null,
                 previewStatus = "Preview stopped",
             )
@@ -154,6 +169,40 @@ class MainViewModel : ViewModel() {
             runCatching { activeClient.getState() }
                 .onSuccess { state -> _uiState.update { it.copy(cameraState = state) } }
                 .onFailure { error -> _uiState.update { it.copy(error = error.toUserMessage()) } }
+        }
+    }
+
+    fun setCaptureMode(mode: String) {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                activeClient.setCaptureMode(mode)
+                activeClient.getState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
+        }
+    }
+
+    fun toggleCapture() {
+        val activeClient = client ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(error = null) }
+            runCatching {
+                if (uiState.value.cameraState?.recordingActive == true) {
+                    activeClient.stopCapture()
+                } else {
+                    activeClient.startCapture()
+                }
+                activeClient.getSettledCaptureState()
+            }.onSuccess { state ->
+                _uiState.update { it.copy(cameraState = state) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(error = error.toUserMessage()) }
+            }
         }
     }
 
@@ -308,6 +357,18 @@ class MainViewModel : ViewModel() {
             certSha256 = state.certSha256.trim().ifBlank { null },
         )
     }
+}
+
+private suspend fun MotionCamRemoteClient.getSettledCaptureState(): CameraState {
+    var state = getState()
+    repeat(30) {
+        if (!state.recordingFinalizing) {
+            return state
+        }
+        delay(500)
+        state = getState()
+    }
+    return state
 }
 
 private fun Throwable.toUserMessage(): String {

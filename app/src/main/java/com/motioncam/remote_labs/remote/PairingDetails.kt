@@ -6,7 +6,8 @@ import org.json.JSONObject
 data class PairingDetails(
     val name: String = "MotionCam",
     val url: String,
-    val pairingCode: String,
+    val pairingCode: String? = null,
+    val pairingToken: String? = null,
     val expiresAt: Long? = null,
     val certSha256: String? = null,
 ) {
@@ -28,9 +29,10 @@ fun parsePairingDetails(input: String): Result<PairingDetails> {
         }
 
         val url = json.getString("url").trim()
-        val pairingCode = json.getString("pairingCode").trim()
-        if (url.isBlank() || pairingCode.isBlank()) {
-            return Result.failure(IllegalArgumentException("Pairing payload is missing URL or code."))
+        val pairingCode = json.optString("pairingCode", "").trim().ifBlank { null }
+        val pairingToken = json.optString("pairingToken", "").trim().ifBlank { null }
+        if (url.isBlank() || (pairingCode == null && pairingToken == null)) {
+            return Result.failure(IllegalArgumentException("Pairing payload is missing URL or pairing secret."))
         }
 
         Result.success(
@@ -38,6 +40,7 @@ fun parsePairingDetails(input: String): Result<PairingDetails> {
                 name = json.optString("name", "MotionCam").ifBlank { "MotionCam" },
                 url = url,
                 pairingCode = pairingCode,
+                pairingToken = pairingToken,
                 expiresAt = if (json.has("expiresAt")) json.optLong("expiresAt") else null,
                 certSha256 = json.optString("certSha256", "").ifBlank { null },
             )
@@ -46,4 +49,3 @@ fun parsePairingDetails(input: String): Result<PairingDetails> {
         Result.failure(IllegalArgumentException("Invalid MotionCam pairing payload.", e))
     }
 }
-

@@ -31,6 +31,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ElevatedCard
@@ -77,6 +79,11 @@ private data class ShutterPreset(
     val shutterNs: Long,
 )
 
+private data class CaptureModeOption(
+    val mode: String,
+    val label: String,
+)
+
 private val ShutterPresets = listOf(
     ShutterPreset("1/24", 41_666_667L),
     ShutterPreset("1/48", 20_833_333L),
@@ -91,6 +98,14 @@ private val WhiteBalancePresets = listOf(
     "4300K" to 4300,
     "5600K" to 5600,
     "6500K" to 6500,
+)
+
+private val CaptureModeOptions = listOf(
+    CaptureModeOption("ZSL", "Photo"),
+    CaptureModeOption("BURST", "Burst"),
+    CaptureModeOption("RAW_VIDEO", "Raw Video"),
+    CaptureModeOption("LOG_VIDEO", "DirectLog"),
+    CaptureModeOption("TIMELAPSE", "Timelapse"),
 )
 
 private enum class ControlBank {
@@ -127,6 +142,8 @@ class MainActivity : ComponentActivity() {
                         onSetWhiteBalance = viewModel::setWhiteBalance,
                         onSetWhiteBalanceAuto = viewModel::setWhiteBalanceAuto,
                         onResetManual = viewModel::resetManual,
+                        onSetCaptureMode = viewModel::setCaptureMode,
+                        onToggleCapture = viewModel::toggleCapture,
                     )
                 }
             }
@@ -154,6 +171,8 @@ private fun MotionCamRemoteApp(
     onSetWhiteBalance: (Int) -> Unit,
     onSetWhiteBalanceAuto: () -> Unit,
     onResetManual: () -> Unit,
+    onSetCaptureMode: (String) -> Unit,
+    onToggleCapture: () -> Unit,
 ) {
     val context = LocalContext.current
     var pairingMode by rememberSaveable { mutableStateOf(PairingMode.Start) }
@@ -214,6 +233,8 @@ private fun MotionCamRemoteApp(
             onSetWhiteBalance = onSetWhiteBalance,
             onSetWhiteBalanceAuto = onSetWhiteBalanceAuto,
             onResetManual = onResetManual,
+            onSetCaptureMode = onSetCaptureMode,
+            onToggleCapture = onToggleCapture,
         )
         return
     }
@@ -427,6 +448,8 @@ private fun CameraRemoteScreen(
     onSetWhiteBalance: (Int) -> Unit,
     onSetWhiteBalanceAuto: () -> Unit,
     onResetManual: () -> Unit,
+    onSetCaptureMode: (String) -> Unit,
+    onToggleCapture: () -> Unit,
 ) {
     Scaffold(containerColor = Color.Black) { innerPadding ->
         BoxWithConstraints(
@@ -441,6 +464,10 @@ private fun CameraRemoteScreen(
                     uiState = uiState,
                     modifier = Modifier.fillMaxSize(),
                     showHeader = false,
+                    onSetCaptureMode = onSetCaptureMode,
+                    onToggleCapture = onToggleCapture,
+                    captureBottomPadding = 122.dp,
+                    compactCaptureControls = true,
                 )
                 CameraTopBar(
                     uiState = uiState,
@@ -479,6 +506,8 @@ private fun CameraRemoteScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
+                        onSetCaptureMode = onSetCaptureMode,
+                        onToggleCapture = onToggleCapture,
                     )
                     CameraControlDeck(
                         uiState = uiState,
@@ -566,6 +595,10 @@ private fun PreviewPanel(
     uiState: MainUiState,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    onSetCaptureMode: (String) -> Unit = {},
+    onToggleCapture: () -> Unit = {},
+    captureBottomPadding: androidx.compose.ui.unit.Dp = 18.dp,
+    compactCaptureControls: Boolean = false,
 ) {
     val cameraState = uiState.cameraState
     Box(
@@ -619,6 +652,181 @@ private fun PreviewPanel(
             }
         }
 
+        CaptureControlsOverlay(
+            uiState = uiState,
+            onSetCaptureMode = onSetCaptureMode,
+            onToggleCapture = onToggleCapture,
+            compact = compactCaptureControls,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = captureBottomPadding),
+        )
+
+    }
+}
+
+@Composable
+private fun CaptureControlsOverlay(
+    uiState: MainUiState,
+    onSetCaptureMode: (String) -> Unit,
+    onToggleCapture: () -> Unit,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    var modeMenuOpen by rememberSaveable { mutableStateOf(false) }
+    val cameraState = uiState.cameraState
+    val captureMode = cameraState?.captureMode ?: "-"
+    val captureModeLabel = CaptureModeOptions.firstOrNull { it.mode == captureMode }?.label ?: captureMode
+    val recordingActive = cameraState?.recordingActive == true
+    val recordingFinalizing = cameraState?.recordingFinalizing == true
+    val canSetMode = "capture.setMode" in uiState.capabilities
+    val canStart = "capture.start" in uiState.capabilities
+    val canStop = "capture.stop" in uiState.capabilities
+    val canToggle = !uiState.isBusy && !recordingFinalizing && if (recordingActive) canStop else canStart
+    val canChangeMode = !uiState.isBusy && !recordingActive && !recordingFinalizing && canSetMode
+    val isVideoMode = captureMode in setOf("RAW_VIDEO", "LOG_VIDEO", "TIMELAPSE", "VIDEO")
+    val captureLabel = when {
+        recordingFinalizing -> "WAIT"
+        recordingActive -> "STOP"
+        isVideoMode -> "REC"
+        else -> "SHOT"
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp),
+    ) {
+        Box(contentAlignment = Alignment.BottomCenter) {
+            ModeSelectorButton(
+                label = captureModeLabel,
+                enabled = canChangeMode,
+                menuOpen = modeMenuOpen,
+                onClick = { modeMenuOpen = true },
+                compact = compact,
+            )
+            if (modeMenuOpen) {
+                Popup(
+                    alignment = Alignment.BottomCenter,
+                    onDismissRequest = { modeMenuOpen = false },
+                    properties = PopupProperties(focusable = true),
+                ) {
+                    CaptureModePopup(
+                        currentMode = captureMode,
+                        enabled = canChangeMode,
+                        onSelect = { mode ->
+                            modeMenuOpen = false
+                            onSetCaptureMode(mode)
+                        },
+                        modifier = Modifier.padding(bottom = if (compact) 42.dp else 48.dp),
+                    )
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(if (compact) 66.dp else 76.dp)
+                .alpha(if (canToggle) 1f else 0.45f)
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable(enabled = canToggle, onClick = onToggleCapture)
+                .padding(4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(if (recordingActive) Color(0xFFB42318) else Color(0xFF7A1712)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = captureLabel,
+                    color = Color.White,
+                    style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeSelectorButton(
+    label: String,
+    enabled: Boolean,
+    menuOpen: Boolean,
+    onClick: () -> Unit,
+    compact: Boolean,
+) {
+    val borderColor = if (menuOpen) Color(0xFFE6A23C) else Color(0xFF4A515C)
+    Box(
+        modifier = Modifier
+            .height(if (compact) 34.dp else 38.dp)
+            .width(if (compact) 118.dp else 138.dp)
+            .alpha(if (enabled) 1f else 0.45f)
+            .clip(MaterialTheme.shapes.small)
+            .background(Color.Black.copy(alpha = 0.62f))
+            .border(1.dp, borderColor, MaterialTheme.shapes.small)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = Color.White,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun CaptureModePopup(
+    currentMode: String,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .width(176.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(Color(0xEE071017))
+            .border(1.dp, Color(0xFF2D3945), MaterialTheme.shapes.small)
+            .padding(vertical = 6.dp),
+    ) {
+        CaptureModeOptions.forEach { option ->
+            val selected = currentMode == option.mode
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .background(if (selected) Color(0xFFE6A23C).copy(alpha = 0.18f) else Color.Transparent)
+                    .clickable(enabled = enabled && !selected) { onSelect(option.mode) }
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = option.label,
+                    color = if (selected) Color(0xFFE6A23C) else Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                )
+                if (selected) {
+                    Text(
+                        text = "ACTIVE",
+                        color = Color(0xFFE6A23C),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1251,13 +1459,21 @@ private fun CameraRemoteScreenPreview() {
                 status = "Connected",
                 isConnected = true,
                 serverName = "MotionCam",
-                capabilities = listOf("state.get", "camera.setIso"),
+                capabilities = listOf(
+                    "state.get",
+                    "camera.setIso",
+                    "capture.setMode",
+                    "capture.start",
+                    "capture.stop",
+                ),
                 cameraState = CameraState(
                     cameraId = "0",
-                    captureMode = "VIDEO",
+                    captureMode = "LOG_VIDEO",
                     controllerState = "ACTIVE",
                     cameraRunning = true,
                     previewRunning = true,
+                    recordingActive = false,
+                    recordingState = "STOPPED",
                     iso = 400,
                     shutterNs = 10_000_000,
                     focusDistance = 2.0,
@@ -1277,6 +1493,8 @@ private fun CameraRemoteScreenPreview() {
             onSetWhiteBalance = {},
             onSetWhiteBalanceAuto = {},
             onResetManual = {},
+            onSetCaptureMode = {},
+            onToggleCapture = {},
         )
     }
 }
