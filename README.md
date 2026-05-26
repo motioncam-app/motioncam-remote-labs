@@ -31,6 +31,18 @@ Install on a connected Android device with:
 ./gradlew :app:installDebug
 ```
 
+Start the docs site locally with:
+
+```sh
+task docs:dev
+```
+
+Build and preview the generated docs site locally with:
+
+```sh
+task docs:preview
+```
+
 Build and publish the docs site to the `gh-pages` branch with:
 
 ```sh

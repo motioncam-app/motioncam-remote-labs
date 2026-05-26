@@ -38,6 +38,14 @@ tasks:
     cmds:
       - npm run build
 
+  docs:preview:
+    desc: Build and preview the documentation site locally.
+    dir: '{{.DOCS_DIR}}'
+    deps:
+      - docs:build
+    cmds:
+      - npm run preview -- {{.CLI_ARGS}}
+
   docs:publish:
     desc: Build and publish the docs to the gh-pages branch.
     deps:
