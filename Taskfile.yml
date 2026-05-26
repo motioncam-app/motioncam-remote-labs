@@ -1,0 +1,80 @@
+version: '3'
+
+vars:
+  DOCS_DIR: docs-site
+  PAGES_BRANCH: gh-pages
+  PAGES_WORKTREE: /private/tmp/motioncam-remote-labs-gh-pages
+
+tasks:
+  default:
+    desc: List available tasks.
+    cmds:
+      - task --list
+
+  docs:install:
+    desc: Install documentation site dependencies.
+    dir: '{{.DOCS_DIR}}'
+    preconditions:
+      - sh: command -v npm
+        msg: npm is required to install the docs site dependencies.
+    status:
+      - test -x node_modules/.bin/astro
+    cmds:
+      - npm ci
+
+  docs:dev:
+    desc: Start the documentation development server.
+    dir: '{{.DOCS_DIR}}'
+    deps:
+      - docs:install
+    cmds:
+      - npm run dev -- {{.CLI_ARGS}}
+
+  docs:build:
+    desc: Build the documentation site for static hosting.
+    dir: '{{.DOCS_DIR}}'
+    deps:
+      - docs:install
+    cmds:
+      - npm run build
+
+  docs:publish:
+    desc: Build and publish the docs to the gh-pages branch.
+    deps:
+      - docs:build
+    preconditions:
+      - sh: command -v git
+        msg: git is required to publish the docs site.
+    cmds:
+      - |
+        set -eu
+
+        branch="{{.PAGES_BRANCH}}"
+        worktree="{{.PAGES_WORKTREE}}"
+
+        if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
+          git worktree remove --force "$worktree"
+        fi
+
+        rm -rf "$worktree"
+
+        if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+          git fetch origin "$branch"
+          git worktree add -B "$branch" "$worktree" "origin/$branch"
+        else
+          git worktree add --orphan "$worktree"
+          git -C "$worktree" branch -m "$branch"
+        fi
+
+        find "$worktree" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+        cp -R "{{.DOCS_DIR}}/dist/." "$worktree/"
+        touch "$worktree/.nojekyll"
+
+        git -C "$worktree" add -A
+
+        if git -C "$worktree" diff --cached --quiet; then
+          echo "No docs changes to publish."
+        else
+          git -C "$worktree" commit -m "Publish docs"
+          git -C "$worktree" push origin "$branch"
+        fi

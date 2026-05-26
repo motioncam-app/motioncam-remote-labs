@@ -31,6 +31,12 @@ Install on a connected Android device with:
 ./gradlew :app:installDebug
 ```
 
+Build and publish the docs site to the `gh-pages` branch with:
+
+```sh
+task docs:publish
+```
+
 ## Status
 
 This project is a demo. APIs, UI behavior, and protocol handling may change as
